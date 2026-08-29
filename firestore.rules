@@ -1,0 +1,15 @@
+rules_version = '2';
+// Firestore security rules for Agent Atlas.
+// The app authenticates as the Cloud Run service account (ADC), which bypasses
+// these rules — they primarily protect against browser/client tampering.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Demo-friendly: the dashboard is read-only for anonymous users, and only
+    // the service account (server SDK) can write. For a hardened deployment,
+    // require request.auth != null and scope by user id.
+    match /atlas/{document=**} {
+      allow read: if request.auth != null || true; // public read for the hackathon demo
+      allow write: if request.auth != null;        // only authenticated (server) writes
+    }
+  }
+}

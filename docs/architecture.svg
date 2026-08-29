@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/><stop offset="1" stop-color="#121a30"/>
+    </linearGradient>
+    <linearGradient id="box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2440"/><stop offset="1" stop-color="#141d36"/>
+    </linearGradient>
+    <linearGradient id="run" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b63e0"/><stop offset="1" stop-color="#2b4cb8"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7c9cff"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="760" fill="url(#bg)"/>
+  <text x="40" y="52" fill="#e8edf7" font-size="26" font-weight="700">Agent Atlas — Architecture</text>
+  <text x="40" y="78" fill="#8fa0c3" font-size="14">Google ADK · Gemini 3.5 · Cloud Run · Firestore · Cloud Scheduler — All Things Agentic Hackathon</text>
+
+  <!-- User / Dashboard -->
+  <rect x="40" y="130" width="250" height="110" rx="12" fill="url(#box)" stroke="#2c3b5e"/>
+  <text x="60" y="158" fill="#e8edf7" font-size="16" font-weight="600">Dashboard (web UI)</text>
+  <text x="60" y="180" fill="#8fa0c3" font-size="12">Submit goal · watch event log</text>
+  <text x="60" y="198" fill="#8fa0c3" font-size="12">steer with messages</text>
+  <text x="60" y="224" fill="#7c9cff" font-size="12">POST /api/tasks</text>
+
+  <!-- Scheduler -->
+  <rect x="40" y="300" width="250" height="90" rx="12" fill="url(#box)" stroke="#2c3b5e"/>
+  <text x="60" y="328" fill="#e8edf7" font-size="16" font-weight="600">Cloud Scheduler</text>
+  <text x="60" y="350" fill="#8fa0c3" font-size="12">HTTP cron · every 2 min</text>
+  <text x="60" y="370" fill="#7c9cff" font-size="12">POST /cron/run</text>
+
+  <!-- Cloud Run -->
+  <rect x="420" y="110" width="340" height="300" rx="14" fill="url(#box)" stroke="#3b63e0" stroke-width="1.5"/>
+  <text x="442" y="140" fill="#7c9cff" font-size="16" font-weight="600">Cloud Run · FastAPI + ADK</text>
+  <rect x="452" y="160" width="280" height="46" rx="8" fill="#182238" stroke="#2c3b5e"/>
+  <text x="468" y="182" fill="#e8edf7" font-size="13">Worker drain loop</text>
+  <text x="468" y="198" fill="#8fa0c3" font-size="11">claim task → run turn → persist</text>
+  <rect x="452" y="220" width="280" height="52" rx="8" fill="#182238" stroke="#2c3b5e"/>
+  <text x="468" y="240" fill="#e8edf7" font-size="13">ADK Runner (run_async)</text>
+  <text x="468" y="258" fill="#8fa0c3" font-size="11">state_delta re-seed each wake-up</text>
+  <rect x="452" y="286" width="280" height="52" rx="8" fill="#182238" stroke="#2c3b5e"/>
+  <text x="468" y="306" fill="#e8edf7" font-size="13">LlmAgent · Gemini 3.5</text>
+  <text x="468" y="324" fill="#8fa0c3" font-size="11">Gemini API / Vertex AI</text>
+  <rect x="452" y="352" width="280" height="42" rx="8" fill="#182238" stroke="#2c3b5e"/>
+  <text x="468" y="377" fill="#e8edf7" font-size="13">ADK function tools</text>
+
+  <!-- Firestore -->
+  <rect x="860" y="150" width="300" height="230" rx="14" fill="url(#box)" stroke="#3ddc97" stroke-width="1.5"/>
+  <text x="882" y="180" fill="#3ddc97" font-size="16" font-weight="600">Firestore — source of truth</text>
+  <text x="882" y="210" fill="#8fa0c3" font-size="13">tasks (queue + status)</text>
+  <text x="882" y="234" fill="#8fa0c3" font-size="13">steps (durable plan)</text>
+  <text x="882" y="258" fill="#8fa0c3" font-size="13">events (audit log)</text>
+  <text x="882" y="282" fill="#8fa0c3" font-size="13">memory (remember / recall)</text>
+  <text x="882" y="312" fill="#4d6a8f" font-size="12">survives scale-to-zero &amp; restarts</text>
+
+  <!-- Tools -->
+  <rect x="40" y="480" width="250" height="120" rx="12" fill="url(#box)" stroke="#2c3b5e"/>
+  <text x="60" y="508" fill="#e8edf7" font-size="15" font-weight="600">Toolset</text>
+  <text x="60" y="532" fill="#8fa0c3" font-size="12">web_search · fetch_url</text>
+  <text x="60" y="552" fill="#8fa0c3" font-size="12">ingest_document · transform_data</text>
+  <text x="60" y="572" fill="#8fa0c3" font-size="12">write_deliverable · remember/recall</text>
+  <text x="60" y="592" fill="#8fa0c3" font-size="12">record_step · complete_task</text>
+
+  <!-- Deliverables -->
+  <rect x="420" y="500" width="250" height="90" rx="12" fill="url(#box)" stroke="#ffce5c" stroke-width="1.5"/>
+  <text x="442" y="528" fill="#ffce5c" font-size="15" font-weight="600">Deliverables</text>
+  <text x="442" y="552" fill="#8fa0c3" font-size="12">reports · cleaned CSVs · JSON</text>
+  <text x="442" y="572" fill="#8fa0c3" font-size="12">(local disk / GCS in prod)</text>
+
+  <!-- External web -->
+  <rect x="860" y="480" width="300" height="90" rx="12" fill="url(#box)" stroke="#2c3b5e"/>
+  <text x="882" y="508" fill="#e8edf7" font-size="15" font-weight="600">External world</text>
+  <text x="882" y="532" fill="#8fa0c3" font-size="12">public web · documents · datasets</text>
+  <text x="882" y="552" fill="#8fa0c3" font-size="12">(SerpAPI search, URL fetch)</text>
+
+  <!-- Arrows -->
+  <line x1="290" y1="185" x2="418" y2="185" stroke="#7c9cff" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="290" y1="345" x2="418" y2="300" stroke="#7c9cff" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="762" y1="250" x2="856" y2="250" stroke="#3ddc97" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="762" y1="300" x2="856" y2="290" stroke="#3ddc97" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <line x1="290" y1="520" x2="418" y2="500" stroke="#7c9cff" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="670" y1="540" x2="856" y2="525" stroke="#7c9cff" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <text x="40" y="700" fill="#8fa0c3" font-size="13">Flow: submit goal → plan in Firestore → cron wakes worker → ADK agent executes tools → progress + memory persisted → deliverables written.</text>
+  <text x="40" y="724" fill="#4d6a8f" font-size="12">Mermaid source: docs/ARCHITECTURE.md · Repo: github.com/ro161012/agent-atlas</text>
+</svg>

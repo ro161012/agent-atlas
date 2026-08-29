@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Atlas — Autonomous Task Operator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div>
+        <h1>Agent Atlas</h1>
+        <p class="tag">Autonomous background task operator · Google ADK + Gemini + Cloud Run + Firestore</p>
+      </div>
+    </div>
+    <div class="statuschip" id="health">…</div>
+  </header>
+
+  <main>
+    <section class="card submit">
+      <h2>Give Atlas a goal</h2>
+      <p class="hint">Describe a messy, multi-step chore. Atlas plans it, then executes it in the background while you do something else.</p>
+      <textarea id="goal" rows="3" placeholder="e.g. Research the top 5 open-source AI coding agents, compare them on pricing, model support and license, and write competitive_analysis.md"></textarea>
+      <div class="row">
+        <button id="submit" class="primary">Submit task</button>
+        <span id="submitMsg" class="msg"></span>
+      </div>
+      <div class="examples">
+        <button class="example">📊 Clean this CSV: "name,age,city\nAlice,34,NYC\nBob,22,LA\n,29,NYC" → write cleaned.csv with only non-empty rows</button>
+        <button class="example">🔎 Research the best practices for running LLM agents on Google Cloud and write a 300-word brief</button>
+      </div>
+    </section>
+
+    <section class="card tasks">
+      <div class="cardhead">
+        <h2>Task queue</h2>
+        <button id="refresh" class="ghost">↻ Refresh</button>
+      </div>
+      <div id="taskList" class="tasklist"><p class="empty">No tasks yet — submit one above.</p></div>
+    </section>
+
+    <section class="card detail" id="detail" hidden>
+      <div class="cardhead">
+        <h2 id="dTitle">Task</h2>
+        <span class="statuschip" id="dStatus"></span>
+      </div>
+      <p id="dGoal" class="goal"></p>
+      <div class="grid">
+        <div>
+          <h3>Plan</h3>
+          <ol id="dPlan" class="plan"></ol>
+        </div>
+        <div>
+          <h3>Event log <button id="runNow" class="ghost small">Run a turn now</button></h3>
+          <ul id="dEvents" class="events"></ul>
+        </div>
+      </div>
+      <div class="steer">
+        <input id="msg" type="text" placeholder="Steer Atlas: e.g. 'focus on pricing data'" />
+        <button id="sendMsg" class="primary">Send</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

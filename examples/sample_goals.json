@@ -1,0 +1,20 @@
+{
+  "goals": [
+    {
+      "title": "Competitive research",
+      "goal": "Research the top 5 open-source AI coding agents. For each, note the license, model support, and rough pricing model, then write competitive_analysis.md as the deliverable."
+    },
+    {
+      "title": "CSV cleanup pipeline",
+      "goal": "Clean this CSV: \"name,age,city\\nAlice,34,NYC\\nBob,22,LA\\n,29,NYC\\nCarol, 41, SF \" — remove empty rows, trim whitespace, sort by name, and write cleaned.csv."
+    },
+    {
+      "title": "Brief + memory",
+      "goal": "Research best practices for running LLM agents on Google Cloud Run and write a 300-word brief called cloud_agents_brief.md. Remember the top 3 tips for later."
+    },
+    {
+      "title": "Dataset summary",
+      "goal": "Summarize this dataset: [{\"product\":\"A\",\"revenue\":120,\"qty\":4},{\"product\":\"B\",\"revenue\":80,\"qty\":9},{\"product\":\"A\",\"revenue\":45,\"qty\":2}] — total revenue per product, then write revenue_summary.json."
+    }
+  ]
+}

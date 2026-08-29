@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Local data + secrets
+.env
+atlas_data/
+sessions.db
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Freebuff workspace metadata
+.freebuff/
