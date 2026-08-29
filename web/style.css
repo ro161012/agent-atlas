@@ -208,5 +208,15 @@ h3 { margin: 0 0 8px; font-size: 11.5px; font-weight: 600; text-transform: upper
 }
 .steer input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
+/* ---- backend notice ---- */
+.notice {
+  max-width: 1040px; margin: 16px auto -8px; padding: 0 24px;
+}
+.notice > * {
+  display: block; background: var(--amber-bg); color: var(--amber);
+  border: 1px solid #f4d29c; border-radius: 6px; padding: 10px 14px; font-size: 13px;
+}
+.notice code { font-family: var(--mono); font-size: 12px; }
+
 /* ---- misc ---- */
 [hidden] { display: none !important; }

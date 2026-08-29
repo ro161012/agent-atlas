@@ -4,8 +4,13 @@
 const $ = (id) => document.getElementById(id);
 let selected = null;
 
+// API base: same origin by default; override in web/config.js to point this
+// static dashboard at a deployed backend (e.g. a Cloud Run URL).
+const API_BASE = (window.ATLAS_CONFIG && window.ATLAS_CONFIG.apiBase) || "";
+const apiUrl = (path) => API_BASE + path;
+
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
@@ -182,6 +187,11 @@ async function boot() {
     el.className = "health ok";
   } catch {
     $("health").textContent = "offline";
+    const host = location.hostname;
+    const isDev = host === "localhost" || host === "127.0.0.1";
+    if (API_BASE || !isDev) {
+      $("backendNotice").hidden = false;
+    }
   }
   await loadTasks();
   setInterval(loadTasks, 5000);

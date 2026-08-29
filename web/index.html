@@ -28,6 +28,10 @@
     </div>
   </header>
 
+  <div class="notice" id="backendNotice" hidden>
+    <span><strong>Backend offline.</strong> This is the static dashboard. It needs a running Agent Atlas API — see <code>web/config.js</code> to point it at a deployed backend.</span>
+  </div>
+
   <main>
     <section class="panel submit">
       <div class="panel-head">
@@ -119,6 +123,7 @@
     </section>
   </main>
 
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

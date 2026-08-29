@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -36,6 +37,17 @@ agent = build_agent()
 session_service = new_session_service()
 
 app = FastAPI(title="Agent Atlas", version="1.0.0")
+
+# The dashboard may be hosted statically (e.g. GitHub Pages) and call this API
+# cross-origin. Wide-open CORS is acceptable for this demo; tighten to explicit
+# origins before production use.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 
 
