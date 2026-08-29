@@ -18,9 +18,10 @@ Design notes:
 
 from __future__ import annotations
 
+import datetime
+import itertools
 import json
 import os
-import time
 import uuid
 from typing import Any, Optional
 
@@ -29,7 +30,8 @@ from .state_schema import StepStatus, TaskStatus
 
 
 def _now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
+    # Microsecond precision so same-instant writes still order deterministically.
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _new_id(prefix: str) -> str:
@@ -54,6 +56,9 @@ class FirestoreStore:
         self._steps = self._db.collection(f"{self._prefix}/tasks/task_steps")
         self._events = self._db.collection(f"{self._prefix}/tasks/task_events")
         self._memory = self._db.collection(f"{self._prefix}/memory/kv")
+        # Monotonic per-process sequence: deterministic FIFO tie-break when two
+        # tasks share the same wall-clock timestamp (Windows timer ~15ms).
+        self._seq = itertools.count()
 
     # ---- tasks ------------------------------------------------------------
     def create_task(self, goal: str, title: str = "", meta: dict | None = None) -> str:
@@ -71,6 +76,7 @@ class FirestoreStore:
                 "deliverables": [],
                 "created_at": _now(),
                 "updated_at": _now(),
+                "seq": next(self._seq),
                 "meta": meta or {},
             }
         )
@@ -119,7 +125,10 @@ class FirestoreStore:
             )
             snaps = sorted(
                 tr.get(query),
-                key=lambda s: (s.to_dict() or {}).get("created_at", ""),
+                key=lambda s: (
+                    (s.to_dict() or {}).get("created_at", ""),
+                    (s.to_dict() or {}).get("seq", 0),
+                ),
             )[:batch]
             for snap in snaps:
                 data = dict(snap.to_dict() or {})
@@ -137,7 +146,10 @@ class FirestoreStore:
         query = self._tasks.where("status", "==", TaskStatus.PENDING.value).limit(20)
         snaps = sorted(
             query.stream(),
-            key=lambda s: (s.to_dict() or {}).get("created_at", ""),
+            key=lambda s: (
+                (s.to_dict() or {}).get("created_at", ""),
+                (s.to_dict() or {}).get("seq", 0),
+            ),
         )
         if not snaps:
             return None
@@ -190,12 +202,18 @@ class FirestoreStore:
                 "step_index": index,
                 "payload": payload,
                 "ts": _now(),
+                "seq": next(self._seq),
             }
         )
 
     def get_events(self, task_id: str, limit: int = 200) -> list[dict]:
         docs = list(self._events.where("task_id", "==", task_id).stream())
-        docs.sort(key=lambda d: (d.to_dict() or {}).get("ts", ""))
+        docs.sort(
+            key=lambda d: (
+                (d.to_dict() or {}).get("ts", ""),
+                (d.to_dict() or {}).get("seq", 0),
+            )
+        )
         return [d.to_dict() for d in docs][-limit:]
 
     # ---- durable memory ----------------------------------------------------
@@ -230,9 +248,18 @@ class LocalStore:
         self._memory_dir = os.path.join(root, "memory")
         for d in (self._tasks_dir, self._steps_dir, self._events_dir, self._memory_dir):
             os.makedirs(d, exist_ok=True)
+        # Monotonic per-process sequence: deterministic FIFO tie-break.
+        self._seq = itertools.count()
+
+    @staticmethod
+    def _fid(*parts: str) -> str:
+        """Build a filesystem-safe id. On Windows a ':' inside a filename would
+        create an NTFS Alternate Data Stream (invisible to listdir), so we
+        sanitize it here along with '/'."""
+        return "_".join(p.replace("/", "_").replace(":", "_") for p in parts)
 
     def _path(self, folder: str, fid: str) -> str:
-        return os.path.join(folder, fid.replace("/", "_") + ".json")
+        return os.path.join(folder, fid + ".json")
 
     def _write(self, path: str, data: dict) -> None:
         with open(path, "w", encoding="utf-8") as fh:
@@ -261,6 +288,7 @@ class LocalStore:
                 "deliverables": [],
                 "created_at": _now(),
                 "updated_at": _now(),
+                "seq": next(self._seq),
                 "meta": meta or {},
             },
         )
@@ -289,16 +317,27 @@ class LocalStore:
         return out
 
     def claim_next_task(self, batch: int = 1) -> Optional[dict]:
-        for fn in sorted(os.listdir(self._tasks_dir)):
+        candidates = []
+        for fn in os.listdir(self._tasks_dir):
             if not fn.endswith(".json"):
                 continue
             data = self._read(os.path.join(self._tasks_dir, fn))
             if data and data.get("status") == TaskStatus.PENDING.value:
-                self.update_task(data["id"], status=TaskStatus.RUNNING.value)
-                data["status"] = TaskStatus.RUNNING.value
-                data["attempts"] = int(data.get("attempts", 0)) + 1
-                return data
-        return None
+                candidates.append(data)
+        # FIFO: oldest pending task first, matching the Firestore backend.
+        candidates.sort(key=lambda d: (d.get("created_at", ""), d.get("seq", 0)))
+        if not candidates:
+            return None
+        data = candidates[0]
+        attempts = int(data.get("attempts", 0)) + 1
+        self.update_task(
+            data["id"],
+            status=TaskStatus.RUNNING.value,
+            attempts=attempts,
+        )
+        data["status"] = TaskStatus.RUNNING.value
+        data["attempts"] = attempts
+        return data
 
     def touch(self, task_id: str) -> None:
         self.update_task(task_id, status=TaskStatus.RUNNING.value)
@@ -310,19 +349,19 @@ class LocalStore:
             doc["task_id"] = task_id
             doc["index"] = i
             doc.setdefault("status", StepStatus.PENDING.value)
-            self._write(self._path(self._steps_dir, f"{task_id}_{i}"), doc)
+            self._write(self._path(self._steps_dir, self._fid(task_id, str(i))), doc)
 
     def get_plan(self, task_id: str) -> list[dict]:
         out = []
         for i in range(10000):
-            data = self._read(self._path(self._steps_dir, f"{task_id}_{i}"))
+            data = self._read(self._path(self._steps_dir, self._fid(task_id, str(i))))
             if not data:
                 break
             out.append(data)
         return out
 
     def set_step_status(self, task_id: str, index: int, status: StepStatus, note: str = "") -> None:
-        path = self._path(self._steps_dir, f"{task_id}_{index}")
+        path = self._path(self._steps_dir, self._fid(task_id, str(index)))
         data = self._read(path) or {"task_id": task_id, "index": index}
         data["status"] = status.value
         data["note"] = note
@@ -331,36 +370,42 @@ class LocalStore:
 
     def record_event(self, task_id: str, kind: str, payload: Any, index: int = -1) -> None:
         self._write(
-            self._path(self._events_dir, f"{task_id}_{_new_id('ev')}"),
-            {"task_id": task_id, "kind": kind, "step_index": index, "payload": payload, "ts": _now()},
+            self._path(self._events_dir, self._fid(task_id, _new_id("ev"))),
+            {
+                "task_id": task_id,
+                "kind": kind,
+                "step_index": index,
+                "payload": payload,
+                "ts": _now(),
+                "seq": next(self._seq),
+            },
         )
 
     def get_events(self, task_id: str, limit: int = 200) -> list[dict]:
         out = []
-        prefix = task_id + "_"
-        for fn in sorted(os.listdir(self._events_dir)):
+        prefix = self._fid(task_id) + "_"
+        for fn in os.listdir(self._events_dir):
             if not fn.startswith(prefix) or not fn.endswith(".json"):
                 continue
             data = self._read(os.path.join(self._events_dir, fn))
             if data:
                 out.append(data)
-            if len(out) >= limit:
-                break
-        return out
+        out.sort(key=lambda d: (d.get("ts", ""), d.get("seq", 0)))
+        return out[-limit:]
 
     def remember(self, scope: str, key: str, value: Any) -> None:
         self._write(
-            self._path(self._memory_dir, f"{scope}_{key}"),
+            self._path(self._memory_dir, self._fid(scope, key)),
             {"scope": scope, "key": key, "value": value, "ts": _now()},
         )
 
     def recall(self, scope: str, key: str) -> Any:
-        data = self._read(self._path(self._memory_dir, f"{scope}_{key}"))
+        data = self._read(self._path(self._memory_dir, self._fid(scope, key)))
         return (data or {}).get("value")
 
     def recall_all(self, scope: str, limit: int = 200) -> dict:
         out = {}
-        prefix = scope + "_"
+        prefix = self._fid(scope) + "_"
         for fn in os.listdir(self._memory_dir):
             if not fn.startswith(prefix) or not fn.endswith(".json"):
                 continue

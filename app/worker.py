@@ -130,13 +130,18 @@ async def post_user_message(store: Any, agent: Any, session_service: Any, task_i
         return {"status": "error", "message": "Task not found."}
     runner = build_runner(agent, session_service)
     plan = store.get_plan(task_id)
-    events = await run_turn(
-        runner,
-        user_id=USER_ID,
-        session_id=task_id,
-        message=message,
-        state_delta=_state_delta(store, task, plan),
-    )
+    try:
+        events = await run_turn(
+            runner,
+            user_id=USER_ID,
+            session_id=task_id,
+            message=message,
+            state_delta=_state_delta(store, task, plan),
+        )
+    except Exception as exc:  # noqa: BLE001 - surface a readable error, don't 500
+        logger.exception("User message failed for task %s", task_id)
+        store.record_event(task_id, "error", {"message": str(exc)})
+        return {"status": "error", "message": str(exc), "task": store.get_task(task_id)}
     for ev in events:
         store.record_event(task_id, "user_turn", ev, index=int(task.get("current_step", 0)))
     fresh = store.get_task(task_id)

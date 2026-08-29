@@ -1,6 +1,7 @@
 # Agent Atlas — pinned core deps (Python 3.11+)
-google-adk>=0.1.0
-google-genai>=1.10.0
+# Verified against google-adk 2.8 (Runner(agent=..., app_name=...) API).
+google-adk>=2.0.0
+google-genai>=2.0.0
 google-cloud-firestore>=2.19.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0

@@ -95,7 +95,16 @@ async def run_task_now(task_id: str) -> dict:
     store.update_task(task_id, status=TaskStatus.PENDING.value)
     from ..worker import run_one_turn  # local import to keep startup light
 
-    await run_one_turn(store, build_runner_for(task_id), task)
+    try:
+        await run_one_turn(store, build_runner_for(task_id), task)
+    except Exception as exc:  # noqa: BLE001 - same graceful path as the worker
+        logger.exception("Task %s failed during manual run", task_id)
+        store.record_event(task_id, "error", {"message": str(exc)})
+        store.update_task(
+            task_id,
+            status=TaskStatus.FAILED.value,
+            result=f"Execution error: {exc}",
+        )
     return {"task_id": task_id, "status": store.get_task(task_id).get("status")}
 
 

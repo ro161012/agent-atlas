@@ -8,7 +8,11 @@ venv/
 # Local data + secrets
 .env
 atlas_data/
+atlas_data*/
 sessions.db
+
+# Portable Python used for local verification (not part of the repo)
+.pytool/
 
 # Editors / OS
 .DS_Store

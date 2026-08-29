@@ -99,7 +99,14 @@ def new_session_service() -> InMemorySessionService:
 
 
 def build_runner(agent: Agent, session_service: InMemorySessionService) -> Runner:
-    return Runner(app=agent, session_service=session_service)
+    # ADK 2.x: pass the raw agent via `agent=` (requires `app_name`) — passing it
+    # as `app=` would expect a full App wrapper with context_cache_config.
+    return Runner(
+        agent=agent,
+        app_name=APP_NAME,
+        session_service=session_service,
+        auto_create_session=True,
+    )
 
 
 async def run_turn(
