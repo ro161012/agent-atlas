@@ -43,7 +43,11 @@ def web_search(query: str, num: int = 5) -> dict:
         r.raise_for_status()
         organic = r.json().get("organic_results", [])[: int(num)]
         results = [
-            {"title": x.get("title"), "link": x.get("link"), "snippet": x.get("snippet")}
+            {
+                "title": x.get("title"),
+                "link": x.get("link"),
+                "snippet": x.get("snippet"),
+            }
             for x in organic
         ]
         return {"status": "success", "query": query, "results": results}
@@ -68,7 +72,7 @@ def fetch_url(url: str, max_chars: int = 20000) -> dict:
             "status": "success",
             "url": str(r.url),
             "http_status": r.status_code,
-            "text": text[: max_chars],
+            "text": text[:max_chars],
         }
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"Could not fetch URL: {exc}"}

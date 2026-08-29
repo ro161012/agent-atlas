@@ -3,63 +3,118 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agent Atlas — Autonomous Task Operator</title>
+  <title>Agent Atlas — Task Console</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 7l7 9-7 9-7-9z' fill='white'/%3E%3C/svg%3E" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">◈</span>
-      <div>
+      <svg class="mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#2563eb" />
+        <path d="M16 7l7 9-7 9-7-9z" fill="#ffffff" />
+      </svg>
+      <div class="brand-text">
         <h1>Agent Atlas</h1>
-        <p class="tag">Autonomous background task operator · Google ADK + Gemini + Cloud Run + Firestore</p>
+        <p class="subtitle">Autonomous task console</p>
       </div>
     </div>
-    <div class="statuschip" id="health">…</div>
+    <div class="topbar-right">
+      <span class="health" id="health">connecting…</span>
+      <button id="refresh" class="btn btn-ghost btn-sm" type="button">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+        Refresh
+      </button>
+    </div>
   </header>
 
   <main>
-    <section class="card submit">
-      <h2>Give Atlas a goal</h2>
-      <p class="hint">Describe a messy, multi-step chore. Atlas plans it, then executes it in the background while you do something else.</p>
-      <textarea id="goal" rows="3" placeholder="e.g. Research the top 5 open-source AI coding agents, compare them on pricing, model support and license, and write competitive_analysis.md"></textarea>
-      <div class="row">
-        <button id="submit" class="primary">Submit task</button>
-        <span id="submitMsg" class="msg"></span>
+    <section class="panel submit">
+      <div class="panel-head">
+        <h2>New task</h2>
+        <p class="hint">Describe a multi-step goal. Atlas plans it, then executes it in the background.</p>
       </div>
-      <div class="examples">
-        <button class="example">📊 Clean this CSV: "name,age,city\nAlice,34,NYC\nBob,22,LA\n,29,NYC" → write cleaned.csv with only non-empty rows</button>
-        <button class="example">🔎 Research the best practices for running LLM agents on Google Cloud and write a 300-word brief</button>
+      <form id="goalForm">
+        <textarea id="goal" rows="3" spellcheck="false"
+          placeholder="e.g. Research the top 5 open-source AI coding agents, compare licenses and pricing, and write competitive_analysis.md"></textarea>
+        <div class="form-row">
+          <button type="submit" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+            Submit task
+          </button>
+          <span class="form-msg" id="formMsg"></span>
+        </div>
+        <details class="examples">
+          <summary>Example goals</summary>
+          <ul>
+            <li><button type="button" class="linklike" data-goal="Clean this CSV: &quot;name,age,city\nAlice,34,NYC\nBob,22,LA\n,29,NYC&quot; — remove empty rows, trim whitespace, sort by name, write cleaned.csv">CSV cleanup pipeline</button></li>
+            <li><button type="button" class="linklike" data-goal="Research best practices for running LLM agents on Google Cloud Run and write a 300-word brief called cloud_agents_brief.md">Research brief</button></li>
+            <li><button type="button" class="linklike" data-goal="Summarize this dataset: [{&quot;product&quot;:&quot;A&quot;,&quot;revenue&quot;:120},{&quot;product&quot;:&quot;B&quot;,&quot;revenue&quot;:80},{&quot;product&quot;:&quot;A&quot;,&quot;revenue&quot;:45}] — total revenue per product, write revenue_summary.json">Dataset summary</button></li>
+          </ul>
+        </details>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head table-head">
+        <h2>Tasks</h2>
+        <span class="count" id="taskCount"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="tasks">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th class="col-num">Step</th>
+              <th class="col-num">Attempts</th>
+              <th>Status</th>
+              <th class="col-time">Updated</th>
+            </tr>
+          </thead>
+          <tbody id="taskBody">
+            <tr class="empty-row"><td colspan="5" class="empty">No tasks yet.</td></tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
-    <section class="card tasks">
-      <div class="cardhead">
-        <h2>Task queue</h2>
-        <button id="refresh" class="ghost">↻ Refresh</button>
-      </div>
-      <div id="taskList" class="tasklist"><p class="empty">No tasks yet — submit one above.</p></div>
-    </section>
-
-    <section class="card detail" id="detail" hidden>
-      <div class="cardhead">
-        <h2 id="dTitle">Task</h2>
-        <span class="statuschip" id="dStatus"></span>
-      </div>
-      <p id="dGoal" class="goal"></p>
-      <div class="grid">
+    <section class="panel detail" id="detail" hidden>
+      <div class="panel-head">
         <div>
+          <h2 id="dTitle">Task</h2>
+          <p class="goal" id="dGoal"></p>
+        </div>
+        <span class="pill" id="dStatus"></span>
+      </div>
+
+      <div class="detail-grid">
+        <div class="plan-col">
           <h3>Plan</h3>
+          <div class="progress">
+            <div class="progress-track"><div class="progress-bar" id="dProgress"></div></div>
+            <span class="progress-label" id="dProgressLabel"></span>
+          </div>
           <ol id="dPlan" class="plan"></ol>
+          <h3>Result</h3>
+          <pre id="dResult" class="result"></pre>
         </div>
-        <div>
-          <h3>Event log <button id="runNow" class="ghost small">Run a turn now</button></h3>
-          <ul id="dEvents" class="events"></ul>
+
+        <div class="log-col">
+          <div class="log-head">
+            <h3>Event log</h3>
+            <div class="log-actions">
+              <button id="runNow" class="btn btn-ghost btn-sm" type="button">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 3l9 5-9 5z"/></svg>
+                Run a turn
+              </button>
+            </div>
+          </div>
+          <div id="dEvents" class="log"></div>
+          <form id="steerForm" class="steer">
+            <input id="msg" type="text" placeholder="Steer the task — e.g. focus on pricing data" autocomplete="off" />
+            <button type="submit" class="btn btn-primary btn-sm">Send</button>
+          </form>
         </div>
-      </div>
-      <div class="steer">
-        <input id="msg" type="text" placeholder="Steer Atlas: e.g. 'focus on pricing data'" />
-        <button id="sendMsg" class="primary">Send</button>
       </div>
     </section>
   </main>

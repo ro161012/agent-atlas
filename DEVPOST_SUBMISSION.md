@@ -2,133 +2,108 @@
 
 **Track:** The Taskmaster
 **Repo:** https://github.com/ro161012/agent-atlas
-**Demo video:** see VIDEO_SCRIPT.md (script for the ~4-min submission video)
-
----
+**Demo video:** see VIDEO_SCRIPT.md (script for the ~4-minute submission video)
 
 ## Tagline
-**Agent Atlas** — an autonomous background task operator that takes a messy,
-multi-step goal, plans it, and *executes it* on Google Cloud while you do
-something else.
+
+Agent Atlas is an autonomous background task operator that takes a messy,
+multi-step goal, plans it, and executes it end-to-end on Google Cloud while you
+do something else.
 
 ## Description
 
 ### The problem
-Most AI today waits for you to ask. The next generation doesn't: agents take a
-goal, make a plan, and actually carry it out. But the *hard* part isn't writing
-a plan — it's **finishing the job asynchronously**: surviving container
-restarts, keeping context across days, not hallucinating progress, and taking
-real actions (searching, transforming data, writing deliverables) instead of
-just talking.
+
+The hard part of an agent isn't writing a plan — it's finishing the job.
+Production agents run asynchronously, in the background, for hours or days.
+They must survive container restarts and scale-to-zero periods, keep context
+across sessions, never hallucinate progress, and take real actions (searching,
+transforming data, writing deliverables) instead of just talking.
 
 ### The solution
-Atlas is a Taskmaster-track agent built with **Google ADK + Gemini 3.5** that
-runs as a durable background process on **Cloud Run + Firestore + Cloud
-Scheduler**:
 
-1. **Submit a goal** ("research the top 5 open-source AI coding agents and write
-   competitive_analysis.md") through the dashboard or REST API.
-2. **Atlas plans** — the goal is decomposed into 3–6 concrete steps
+Atlas is a Taskmaster-track agent built with Google ADK + Gemini 3.5 that runs
+as a durable background process on Cloud Run, Cloud Firestore, and Cloud
+Scheduler:
+
+1. **Submit a goal** through the dashboard or REST API — e.g. "research the
+   top 5 open-source AI coding agents and write competitive_analysis.md".
+2. **Atlas plans.** The goal is decomposed into 3–6 concrete steps
    (research / transform / ingest / memory / deliver), Gemini-refined when a
-   key is present, with a deterministic fallback so nothing blocks.
-3. **Atlas executes in the background** — a Cloud Scheduler cron wakes a Cloud
-   Run worker every 2 minutes; the worker claims queued tasks with an atomic
+   key is configured, with a deterministic fallback so the pipeline never
+   blocks on the model.
+3. **Atlas executes in the background.** A Cloud Scheduler cron wakes a Cloud
+   Run worker every two minutes. The worker claims queued tasks with an atomic
    Firestore transaction and drives the ADK agent turn-by-turn with real tools:
-   live web search, URL fetching, document ingest, CSV/JSON data pipelines, and
+   web search, URL fetching, document ingest, CSV/JSON data pipelines, and
    deliverable writing.
-4. **Progress is durable** — every step, tool call, and finding is persisted to
-   Firestore. On every wake-up the agent's system prompt is re-rendered from
-   durable state (`current_step`, plan, memory) via ADK `state_delta` — it
-   *knows* where it is, it never *guesses*.
-5. **Check in anytime** — the dashboard shows a live event log; you can steer
-   with messages ("focus on pricing data") or let it run to completion.
+4. **Progress is durable.** Every step, tool call, and finding is persisted to
+   Firestore. On each wake-up the system prompt is re-rendered from durable
+   state (`current_step`, plan, memory) via ADK `state_delta` — the agent
+   knows where it is; it never guesses.
+5. **Check in anytime.** The dashboard exposes a live event log, and you can
+   steer a running task with a message ("focus on pricing data") or let it run
+   to completion.
 
-### Why it's not a chatbot
-- **Takes action:** web search, URL fetch, document ingest, data transforms, and
-  file deliverables — not prose.
-- **Runs async:** a Firestore queue + cron-driven workers; scale-to-zero
-  friendly; tasks survive restarts mid-step.
-- **Remembers:** a Firestore-backed memory bank (`remember`/`recall`) spans
-  sessions and days, not just one chat.
-- **Checkpoint-and-resume:** the model reads its position from state, never from
-  replayed chat history — no hallucinated "completed" steps.
+### What distinguishes it from a chatbot
 
----
+- **Takes action:** web search, URL fetch, document ingest, data transforms,
+  and file deliverables — not prose.
+- **Runs asynchronously:** a Firestore queue plus cron-driven workers;
+  scale-to-zero friendly; tasks survive restarts mid-step.
+- **Remembers:** a Firestore-backed memory bank spans sessions and days.
+- **Checkpoint-and-resume:** the model reads its position from state, never
+  from replayed chat history, so progress cannot be hallucinated.
 
-## Features & functionality
+## Features
 
-1. **Goal → plan decomposition** — heuristic-by-default, Gemini-refined when a
-   key is configured (planner.py).
-2. **Autonomous multi-step execution** — ADK agent drives its own tool sequence
-   toward completion (worker.py + agent.py).
-3. **Live web research** — `web_search` (SerpAPI Google) + `fetch_url` with
-   HTML→text extraction.
-4. **Data pipelines** — `transform_data` supports head / summary / clean /
-   filter / sort / keep-columns / count over CSV or JSON; `ingest_document`
-   pulls URLs, files, or inline text.
-5. **Deliverables** — `write_deliverable` writes reports/CSVs/JSON to disk
-   (GCS-ready in production).
-6. **Durable task ledger** — Firestore stores tasks, steps, and a full event
-   log; atomic claim prevents double execution.
-7. **Memory bank** — `remember` / `recall` persist findings per project across
-   days of asynchronous operation.
-8. **Human steering** — message a running task ("focus on X") and it adapts.
-9. **Dashboard** — zero-build static UI served by FastAPI: submit, watch live
-   event log, run a turn, steer.
-10. **Zero-GCP local demo** — `STORE_BACKEND=local` runs the full system on JSON
-    files with no account and no API key.
-
----
+1. Goal → plan decomposition (Gemini-refined, heuristic fallback)
+2. Autonomous multi-step execution toward completion
+3. Live web research (`web_search` via SerpAPI, `fetch_url` with HTML→text)
+4. Data pipelines: head / summary / clean / filter / sort / keep / count over
+   CSV or JSON; document ingest from URLs, files, or inline text
+5. Deliverables written to disk (GCS-ready in production)
+6. Durable task ledger in Firestore with atomic, transaction-safe claims
+7. Long-term memory (`remember` / `recall`) scoped per task
+8. Human steering of in-flight tasks
+9. Dashboard: submit, watch the live event log, trigger a run, steer
+10. Zero-GCP local mode (`STORE_BACKEND=local`) for instant demos
 
 ## Technologies used
 
 | Layer | Technology |
 |---|---|
-| Agent framework | **Google ADK** (LlmAgent, `Runner.run_async`, ToolContext, function tools, session state) |
-| Model | **Gemini 3.5** via Gemini API or Vertex AI (env-configurable, defaults `gemini-3.5-flash`) |
-| Compute | **Cloud Run** (containerized, scale-to-zero) |
-| Async trigger | **Cloud Scheduler** (HTTP cron → `/cron/run`) |
-| State & memory | **Cloud Firestore** (queue, step ledger, event log, memory bank) |
+| Agent framework | Google ADK (LlmAgent, `Runner.run_async`, `ToolContext`, function tools, session state) |
+| Model | Gemini 3.5 via Gemini API or Vertex AI (env-configurable, default `gemini-3.5-flash`) |
+| Compute | Cloud Run (containerized, scale-to-zero) |
+| Async trigger | Cloud Scheduler (HTTP cron → `/cron/run`) |
+| State and memory | Cloud Firestore (queue, step ledger, event log, memory bank) |
 | API layer | FastAPI + uvicorn |
-| Build/CI | Docker + Cloud Build (`cloudbuild.yaml`) |
-| Web UI | Vanilla HTML/CSS/JS dashboard served by FastAPI |
-| Tests | pytest (planner + local store) |
+| Build/CI | Docker + Cloud Build; GitHub Actions (lint, format, tests) |
+| Web UI | Vanilla HTML/CSS/JS served by FastAPI |
+| Tests | pytest (planner, stores, transforms, full lifecycle) |
 
 ## Other data sources used
+
 - SerpAPI Google Search (optional `SERPAPI_KEY`) for live web research
 - Arbitrary user-supplied URLs, documents, and CSV/JSON datasets
 
----
+## Findings and learnings
 
-## Findings & learnings
-
-1. **State beats history.** The single biggest reliability win was moving the
-   agent's position out of the conversation and into a durable ledger, then
-   re-rendering the system prompt from it on every wake-up. It eliminated
-   hallucinated progress and made scale-to-zero trivial.
-2. **The queue is the orchestrator.** A Firestore queue + atomic claim +
-   cron-driven drain is dramatically simpler and cheaper than a long-lived
-   polling process — and it fails open: a crashed container just leaves the task
-   for the next tick.
+1. **State beats history.** Moving the agent's position out of the
+   conversation and into a durable ledger, then re-rendering the system prompt
+   from it on every wake-up, eliminated hallucinated progress and made
+   scale-to-zero trivial.
+2. **The queue is the orchestrator.** A Firestore queue with atomic claim and
+   a cron-driven drain is simpler and cheaper than a long-lived poller, and it
+   fails open: a crashed container just leaves the task for the next tick.
 3. **ADK's design pays off.** Tools-as-typed-functions with `ToolContext` state
-   injection made the durable-progress pattern nearly free; function-call
+   injection made the durable-progress pattern nearly free, and function-call
    events drop straight into an audit log.
-4. **Deterministic fallbacks keep demos alive.** Gemini-refined planning with a
-   heuristic fallback and a tool `status: unavailable` path means the demo never
-   hard-fails on a missing API key — a huge demo-day safety net.
-
----
-
-## Judging criteria alignment
-
-| Criterion | How Atlas scores |
-|---|---|
-| **Innovation & Operational Utility (40%)** | Autonomous action: it searches, ingests, transforms, and writes deliverables with zero hand-holding; async by design; multi-day memory. |
-| **Architectural Discipline & Tech Stack (30%)** | Decoupled queue/worker/ledger; durable state machine; atomic claims; bounded step budgets; failure recovery; clean ADK + Cloud Run + Firestore stack. |
-| **Demo & Production Readiness (30%)** | Live unedited demo in ~4 min; reproducible spin-up (README + deploy scripts); architecture diagram (docs/ARCHITECTURE.md + SVG); visible Cloud Run/Firestore proof in the video. |
-
----
+4. **Deterministic fallbacks keep demos alive.** Gemini-refined planning with
+   a heuristic fallback, and tools that report `status: unavailable` instead
+   of raising, mean the demo never hard-fails on a missing API key.
 
 ## Built for
-**All Things Agentic Hackathon** — Taskmaster track.
-**Team:** Solo project by ro161012
+
+All Things Agentic Hackathon — Taskmaster track. Solo project by ro161012.

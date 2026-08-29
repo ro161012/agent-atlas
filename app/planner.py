@@ -18,10 +18,22 @@ logger = logging.getLogger(__name__)
 
 # A generic, always-safe plan shape for unstructured goals.
 _FALLBACK_PLAN = [
-    {"kind": StepKind.RESEARCH.value, "title": "Clarify the goal and gather the inputs you already have"},
-    {"kind": StepKind.RESEARCH.value, "title": "Research the domain and collect the facts needed"},
-    {"kind": StepKind.TRANSFORM.value, "title": "Process / transform any data or documents involved"},
-    {"kind": StepKind.DELIVER.value, "title": "Write the deliverable and summarize the outcome"},
+    {
+        "kind": StepKind.RESEARCH.value,
+        "title": "Clarify the goal and gather the inputs you already have",
+    },
+    {
+        "kind": StepKind.RESEARCH.value,
+        "title": "Research the domain and collect the facts needed",
+    },
+    {
+        "kind": StepKind.TRANSFORM.value,
+        "title": "Process / transform any data or documents involved",
+    },
+    {
+        "kind": StepKind.DELIVER.value,
+        "title": "Write the deliverable and summarize the outcome",
+    },
 ]
 
 _PLAN_PROMPT = """You are a ruthless task planner. Given a user's goal, produce a JSON

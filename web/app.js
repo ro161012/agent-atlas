@@ -1,143 +1,189 @@
-/* Agent Atlas dashboard — talks to the FastAPI service. */
-let selected = null;
+/* Agent Atlas console — talks to the FastAPI service. */
+"use strict";
 
 const $ = (id) => document.getElementById(id);
+let selected = null;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
-  if (!res.ok) throw new Error((await res.text()) || res.statusText);
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
   return res.json();
 }
 
-function statusClass(s) { return "st-" + (s || "PENDING"); }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
 
-async function loadTasks() {
+function fmtTime(iso) {
+  if (!iso) return "";
   try {
-    const { tasks } = await api("/api/tasks");
-    const list = $("taskList");
-    if (!tasks.length) {
-      list.innerHTML = '<p class="empty">No tasks yet — submit one above.</p>';
-      return;
-    }
-    list.innerHTML = "";
-    for (const t of tasks) {
-      const el = document.createElement("div");
-      el.className = "task";
-      el.innerHTML = `
-        <div>
-          <div class="t-title">${esc(t.title)}</div>
-          <div class="t-meta">${esc(t.id)} · step ${t.current_step}/${t.total_steps} · ${esc(t.updated_at || "")}</div>
-        </div>
-        <div class="t-status ${statusClass(t.status)}">${esc(t.status)}</div>`;
-      el.onclick = () => selectTask(t.id);
-      list.appendChild(el);
-    }
-    if (selected) selectTask(selected);
-  } catch (e) {
-    $("taskList").innerHTML = `<p class="empty">Error loading tasks: ${esc(e.message)}</p>`;
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
+  } catch {
+    return iso;
   }
 }
 
+/* ---- tasks table ---- */
+async function loadTasks() {
+  try {
+    const { tasks } = await api("/api/tasks");
+    $("taskCount").textContent = tasks.length ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "";
+    const tbody = $("taskBody");
+    tbody.innerHTML = "";
+    if (!tasks.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="empty">No tasks yet — submit one above.</td></tr>';
+      return;
+    }
+    for (const t of tasks) {
+      const tr = document.createElement("tr");
+      tr.className = "clickable" + (selected === t.id ? " selected" : "");
+      tr.innerHTML = `
+        <td>
+          <div class="t-title">${esc(t.title)}</div>
+          <div class="t-goal">${esc(t.goal)}</div>
+        </td>
+        <td class="col-num">${t.current_step}/${t.total_steps}</td>
+        <td class="col-num">${t.attempts}</td>
+        <td><span class="pill st-${esc(t.status)}">${esc(t.status)}</span></td>
+        <td class="col-time"><span class="t-time">${esc(fmtTime(t.updated_at))}</span></td>`;
+      tr.addEventListener("click", () => selectTask(t.id));
+      tbody.appendChild(tr);
+    }
+    if (selected) selectTask(selected);
+  } catch (e) {
+    $("taskBody").innerHTML = `<tr class="empty-row"><td colspan="5" class="empty">Failed to load tasks: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+/* ---- detail panel ---- */
 async function selectTask(id) {
   selected = id;
-  const d = await api("/api/tasks/" + id);
-  const { task, plan, events } = d;
-  $("detail").hidden = false;
+  const { task, plan, events } = await api(`/api/tasks/${id}`);
+  const detail = $("detail");
+  detail.hidden = false;
+
   $("dTitle").textContent = task.title;
-  const st = $("dStatus");
-  st.textContent = task.status;
-  st.className = "statuschip " + statusClass(task.status);
   $("dGoal").textContent = task.goal;
-  if (task.result) $("dGoal").textContent += "\n\n✓ " + task.result;
+  const status = $("dStatus");
+  status.textContent = task.status;
+  status.className = "pill st-" + esc(task.status);
+
+  const total = Math.max(task.total_steps, plan.length, 1);
+  const done = Math.min(task.current_step, total);
+  $("dProgress").style.width = `${Math.round((done / total) * 100)}%`;
+  $("dProgressLabel").textContent = `${done} of ${total} steps`;
 
   const ol = $("dPlan");
   ol.innerHTML = "";
   plan.forEach((p, i) => {
     const li = document.createElement("li");
-    li.textContent = `[${p.kind}] ${p.title}`;
+    li.innerHTML = `<span class="step-kind">${esc(p.kind)}</span> ${esc(p.title)}`;
     const s = (p.status || "PENDING").toUpperCase();
     if (s === "DONE") li.className = "done";
-    else if (s === "IN_PROGRESS" || i === task.current_step) li.className = "active";
     else if (s === "BLOCKED") li.className = "blocked";
+    else if (s === "IN_PROGRESS" || i === task.current_step) li.className = "active";
     ol.appendChild(li);
   });
 
-  const ul = $("dEvents");
-  ul.innerHTML = "";
-  [...events].reverse().slice(0, 60).forEach((ev) => {
-    const li = document.createElement("li");
+  $("dResult").textContent = task.result || "";
+
+  renderLog(events);
+}
+
+function renderLog(events) {
+  const log = $("dEvents");
+  log.innerHTML = "";
+  if (!events.length) {
+    log.innerHTML = '<div class="log-empty">No events yet. Submit a task and run a turn to see the agent work.</div>';
+    return;
+  }
+  // newest first, capped
+  [...events].slice(-200).reverse().forEach((ev) => {
+    const line = document.createElement("div");
+    line.className = "log-line";
     if (ev.kind === "agent" && ev.payload) {
       const p = ev.payload;
-      const calls = (p.function_calls || []).map((c) => `⚙ ${c.name}(${JSON.stringify(c.args || {}).slice(0, 120)})`).join("\n");
-      li.innerHTML = `<span class="call">${esc(calls)}</span>` +
-        (p.text ? `<span class="text">${esc(p.text.slice(0, 500))}</span>` : "");
+      const parts = [];
+      (p.function_calls || []).forEach((c) => {
+        parts.push(`<span class="kind kind-tool">CALL</span><span class="log-call">${esc(c.name)}</span>`);
+        const args = JSON.stringify(c.args || {});
+        if (args && args !== "{}") parts.push(`<span class="log-args">(${esc(args.slice(0, 200))})</span>`);
+      });
+      if (p.text) {
+        parts.push(`<span class="kind kind-text">TEXT</span>${esc(p.text.slice(0, 600))}`);
+      }
+      if (!parts.length) return;
+      line.innerHTML = `<span class="log-time">${esc(fmtTime(ev.ts))}</span> ${parts.join(" ")}`;
     } else if (ev.kind === "plan") {
-      li.textContent = `📋 Planned ${ev.payload?.steps} steps`;
+      line.innerHTML = `<span class="kind kind-plan">PLAN</span>${esc(ev.payload?.steps || "")} steps`;
     } else if (ev.kind === "error") {
-      li.innerHTML = `<span class="call">✖ ${esc(ev.payload?.message || "")}</span>`;
+      line.innerHTML = `<span class="kind kind-error">ERROR</span>${esc(ev.payload?.message || "")}`;
     } else {
-      li.textContent = `(${ev.kind}) ${esc(JSON.stringify(ev.payload || {}).slice(0, 200))}`;
+      line.innerHTML = `<span class="kind kind-event">${esc(ev.kind.toUpperCase())}</span>${esc(JSON.stringify(ev.payload ?? {}).slice(0, 200))}`;
     }
-    ul.appendChild(li);
+    log.appendChild(line);
   });
 }
 
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-async function submitGoal(text) {
-  $("submitMsg").textContent = "Planning…";
+/* ---- actions ---- */
+$("goalForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("goal").value.trim();
+  if (!text) return;
+  const msg = $("formMsg");
+  msg.textContent = "Planning…";
+  msg.className = "form-msg";
   try {
-    const r = await api("/api/tasks", {
-      method: "POST",
-      body: JSON.stringify({ goal: text }),
-    });
-    $("submitMsg").textContent = `Queued ${r.task_id} with ${r.plan.length} steps.`;
+    const r = await api("/api/tasks", { method: "POST", body: JSON.stringify({ goal: text }) });
+    msg.textContent = `Queued ${r.task_id} (${r.plan.length} steps).`;
     $("goal").value = "";
     await loadTasks();
-  } catch (e) {
-    $("submitMsg").textContent = "Error: " + e.message;
+  } catch (err) {
+    msg.textContent = `Error: ${err.message}`;
+    msg.className = "form-msg error";
   }
-}
-
-$("submit").onclick = () => submitGoal($("goal").value);
-$("refresh").onclick = loadTasks;
-$("runNow").onclick = async () => {
-  if (!selected) return;
-  await api(`/api/tasks/${selected}/run`, { method: "POST" });
-  setTimeout(loadTasks, 1500);
-};
-$("sendMsg").onclick = async () => {
-  const m = $("msg").value.trim();
-  if (!selected || !m) return;
-  await api(`/api/tasks/${selected}/message`, {
-    method: "POST",
-    body: JSON.stringify({ message: m }),
-  });
-  $("msg").value = "";
-  setTimeout(loadTasks, 1500);
-};
-document.querySelectorAll(".example").forEach((b) => {
-  b.onclick = () => {
-    $("goal").value = b.textContent.replace(/^[^ ]+ /, "");
-  };
 });
 
+document.querySelectorAll("[data-goal]").forEach((btn) => {
+  btn.addEventListener("click", () => { $("goal").value = btn.dataset.goal; $("goal").focus(); });
+});
+
+$("refresh").addEventListener("click", loadTasks);
+
+$("runNow").addEventListener("click", async () => {
+  if (!selected) return;
+  await api(`/api/tasks/${selected}/run`, { method: "POST" });
+  await loadTasks();
+});
+
+$("steerForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const m = $("msg").value.trim();
+  if (!selected || !m) return;
+  await api(`/api/tasks/${selected}/message`, { method: "POST", body: JSON.stringify({ message: m }) });
+  $("msg").value = "";
+  await loadTasks();
+});
+
+/* ---- boot ---- */
 async function boot() {
   try {
     const h = await api("/healthz");
-    const chip = $("health");
-    chip.textContent = `● ${h.model} · ${h.store}`;
-    chip.className = "statuschip ok";
-  } catch (e) {
-    $("health").textContent = "● offline";
+    const el = $("health");
+    el.textContent = `${h.model} · ${h.store} backend`;
+    el.className = "health ok";
+  } catch {
+    $("health").textContent = "offline";
   }
   await loadTasks();
-  setInterval(loadTasks, 4000);
+  setInterval(loadTasks, 5000);
 }
 boot();

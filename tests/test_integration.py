@@ -13,11 +13,11 @@ _ROOT = tempfile.mkdtemp(prefix="atlas_int_")
 os.environ["STORE_BACKEND"] = "local"
 os.environ["LOCAL_STORE_PATH"] = _ROOT
 
-from app.state_schema import StepStatus, TaskStatus  # noqa: E402
-from app.store import LocalStore  # noqa: E402
-from app.tools.data import transform_data, write_deliverable  # noqa: E402
-from app.tools.ledger import complete_task, record_step  # noqa: E402
-from app.tools.memory import recall, remember  # noqa: E402
+from app.state_schema import StepStatus, TaskStatus
+from app.store import LocalStore
+from app.tools.data import transform_data, write_deliverable
+from app.tools.ledger import complete_task, record_step
+from app.tools.memory import recall, remember
 
 
 class FakeCtx:
@@ -32,10 +32,13 @@ def test_full_task_lifecycle():
     task_id = store.create_task("Clean a CSV and write a report")
 
     # 1. plan + claim (what the API + worker do)
-    store.set_plan(task_id, [
-        {"kind": "transform", "title": "Clean the CSV"},
-        {"kind": "deliver", "title": "Write report.md"},
-    ])
+    store.set_plan(
+        task_id,
+        [
+            {"kind": "transform", "title": "Clean the CSV"},
+            {"kind": "deliver", "title": "Write report.md"},
+        ],
+    )
     claimed = store.claim_next_task()
     assert claimed["id"] == task_id
     assert store.get_task(task_id)["status"] == TaskStatus.RUNNING.value
@@ -43,7 +46,7 @@ def test_full_task_lifecycle():
     ctx = FakeCtx({"task_id": task_id, "current_step": 0, "total_steps": 2})
 
     # 2. step 0: transform the messy CSV, persist progress
-    messy = 'name,age,city\nAlice,34,NYC\nBob,22,LA\n,29,NYC\nCarol, 41, SF '
+    messy = "name,age,city\nAlice,34,NYC\nBob,22,LA\n,29,NYC\nCarol, 41, SF "
     result = transform_data(messy, action="clean")
     assert result["status"] == "success"
     step = record_step(0, "DONE", "cleaned the CSV", tool_context=ctx)

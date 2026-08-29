@@ -1,6 +1,5 @@
 """Unit tests for the durable ledger using the dependency-free LocalStore."""
 
-import os
 import tempfile
 
 from app.state_schema import StepStatus, TaskStatus

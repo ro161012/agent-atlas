@@ -81,9 +81,7 @@ def complete_task(
         deliverables=[d.strip() for d in deliverables.split(",") if d.strip()],
     )
     if tool_context is not None:
-        tool_context.state["current_step"] = int(
-            tool_context.state.get("total_steps", 0)
-        )
+        tool_context.state["current_step"] = int(tool_context.state.get("total_steps", 0))
     return {"status": "ok", "task_id": task_id, "result": summary}
 
 

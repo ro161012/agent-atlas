@@ -144,9 +144,7 @@ def _summarize_event(event: Any) -> dict | None:
     try:
         content = getattr(event, "content", None)
         parts = getattr(content, "parts", []) or []
-        text = " ".join(
-            getattr(p, "text", "") or "" for p in parts if hasattr(p, "text")
-        )
+        text = " ".join(getattr(p, "text", "") or "" for p in parts if hasattr(p, "text"))
         fcalls = getattr(event, "function_calls", None) or []
         calls = []
         for fc in fcalls:

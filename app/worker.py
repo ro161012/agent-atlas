@@ -88,12 +88,20 @@ async def run_scheduled_cycle(store: Any, agent: Any, session_service: Any) -> d
         turns_for_this_task = 0
         while True:
             task = store.get_task(task_id) or task
-            if task.get("status") in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value, TaskStatus.CANCELLED.value):
+            if task.get("status") in (
+                TaskStatus.COMPLETED.value,
+                TaskStatus.FAILED.value,
+                TaskStatus.CANCELLED.value,
+            ):
                 if task.get("status") == TaskStatus.COMPLETED.value:
                     summary["completed"] += 1
                 break
             if int(task.get("attempts", 0)) > max_steps:
-                store.update_task(task_id, status=TaskStatus.FAILED.value, result="Exceeded step budget.")
+                store.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    result="Exceeded step budget.",
+                )
                 summary["failed"] += 1
                 break
             if turns_for_this_task >= max_turns:
@@ -103,10 +111,14 @@ async def run_scheduled_cycle(store: Any, agent: Any, session_service: Any) -> d
 
             try:
                 await run_one_turn(store, runner, task)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.exception("Task %s errored", task_id)
                 store.record_event(task_id, "error", {"message": str(exc)})
-                store.update_task(task_id, status=TaskStatus.FAILED.value, result=f"Execution error: {exc}")
+                store.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    result=f"Execution error: {exc}",
+                )
                 summary["failed"] += 1
                 break
             turns_for_this_task += 1
@@ -123,7 +135,9 @@ async def run_scheduled_cycle(store: Any, agent: Any, session_service: Any) -> d
     return summary
 
 
-async def post_user_message(store: Any, agent: Any, session_service: Any, task_id: str, message: str) -> dict:
+async def post_user_message(
+    store: Any, agent: Any, session_service: Any, task_id: str, message: str
+) -> dict:
     """Run a human-steered turn against an existing task (live chat/demo mode)."""
     task = store.get_task(task_id)
     if task is None:
@@ -138,7 +152,7 @@ async def post_user_message(store: Any, agent: Any, session_service: Any, task_i
             message=message,
             state_delta=_state_delta(store, task, plan),
         )
-    except Exception as exc:  # noqa: BLE001 - surface a readable error, don't 500
+    except Exception as exc:
         logger.exception("User message failed for task %s", task_id)
         store.record_event(task_id, "error", {"message": str(exc)})
         return {"status": "error", "message": str(exc), "task": store.get_task(task_id)}

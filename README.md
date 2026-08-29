@@ -1,212 +1,190 @@
-# ◈ Agent Atlas — the autonomous task operator
+# Agent Atlas
 
-**All Things Agentic Hackathon · Taskmaster track**
+An autonomous background task operator built on the [Google Agent Development
+Kit (ADK)](https://adk.dev) and Gemini. You submit a goal; Atlas decomposes it
+into a plan, executes it step-by-step with real tools (web research, document
+ingest, data transformations), and writes a deliverable — asynchronously, in
+the background, with every step persisted to Firestore.
 
-> "Most AI today waits for you to ask. Atlas doesn't."
+Built for the [All Things Agentic Hackathon](https://allthingsagentic.devpost.com/)
+(Taskmaster track). Runs on Cloud Run with Cloud Firestore for state and Cloud
+Scheduler for async wake-ups.
 
-Agent Atlas is an **autonomous background agent** built on **Google ADK + Gemini**
-that takes a messy, multi-step goal — "research X, clean this dataset, write me a
-report" — decomposes it into a durable plan, and **executes it in the background**
-while you do something else. Every step, tool call, and finding is persisted to
-**Cloud Firestore**, so a Cloud Run container can scale to zero between ticks and
-a worker picks up exactly where the last one left off.
+## Overview
 
-Built for the [All Things Agentic Hackathon](https://allthingsagentic.devpost.com/).
-Runs on **Gemini 3.5** (via Gemini API or Vertex AI), **Google ADK**, and
-**Cloud Run + Firestore + Cloud Scheduler**.
+Most agent tutorials produce a stateless chatbot. Atlas is designed for the
+opposite operating envelope: long-running, multi-step tasks that must survive
+container restarts, scale-to-zero periods, and days of idle time.
 
----
+Three properties make this work:
 
-## ✨ What it does
+1. **Firestore is the source of truth.** Task state, plan steps, the event
+   log, and long-term memory live in Firestore. The agent's system prompt is
+   rendered from that state on every wake-up — it never infers progress from
+   chat history.
+2. **The queue drives execution.** Tasks are submitted as `PENDING`
+   documents. A Cloud Scheduler cron wakes a Cloud Run worker that claims them
+   with an atomic Firestore transaction, runs bounded agent turns, and
+   re-queues unfinished work for the next tick.
+3. **Tools are the interface to the world.** Search, fetch, ingest, transform,
+   and deliver operations are typed functions whose schemas ADK generates from
+   their signatures.
 
-| Capability | How |
-|---|---|
-| **Goal → plan** | Planner decomposes a fuzzy request into 3–6 concrete steps (`research`, `transform`, `ingest`, `memory`, `deliver`) |
-| **Autonomous execution** | The ADK agent reasons with Gemini and takes action with real tools — live web search, URL fetch, document ingest, data pipelines |
-| **Data pipelines** | `transform_data` runs head / summary / clean / filter / sort / keep / count over CSV or JSON; deliverables written to disk (GCS in prod) |
-| **Durable memory** | `remember` / `recall` persist findings in Firestore — context survives *days*, not just one chat |
-| **Async, always-on** | Tasks sit in a Firestore queue; Cloud Scheduler pings `/cron/run`; workers drain the queue, re-queueing unfinished work for the next tick |
-| **Checkpoint-and-resume** | The agent reads its position from Firestore-backed session state (`current_step`), never from chat history — no hallucinated progress, no lost context |
-| **Human steering** | Submit a goal and walk away, or drop in later with "focus on pricing data" via the dashboard |
-
----
-
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌────────────┐      POST /api/tasks        ┌─────────────────────────────────────┐
-│  Dashboard │ ──────────────────────────▶ │  Cloud Run (uvicorn + FastAPI)     │
-│  (web UI)  │ ◀────────────────────────── │  ├─ POST /api/tasks   submit goal  │
-└────────────┘   task + live event log     │  ├─ POST /cron/run   drain queue   │
-                                           │  └─ GET  /           dashboard     │
-┌────────────┐   every 2 min               │            │                       │
-│  Cloud     │ ───── POST /cron/run ─────▶ │  Worker: claims tasks, drives the  │
-│  Scheduler │                             │  ADK Runner (Gemini 3.5) turn by   │
-└────────────┘                             │  turn, re-seeding session state    │
-                                           └───────────┬───────────┬───────────┘
-                                                       │ reads/writes
-                                                       ▼
-                                           ┌─────────────────────────────┐
-                                           │  Firestore (source of truth)│
-                                           │  tasks / steps / events /   │
-                                           │  memory — survives cold     │
-                                           │  starts & scale-to-zero     │
-                                           └─────────────────────────────┘
+Dashboard ──POST /api/tasks──▶ Cloud Run (FastAPI)
+Cloud Scheduler ──POST /cron/run──▶ Cloud Run
+Cloud Run ──claim (transaction)──▶ Firestore
+Cloud Run ──run_turn(state_delta)──▶ ADK Runner ──▶ Gemini
+ADK Runner ──function calls──▶ Tools ──▶ Firestore / web / filesystem
 ```
 
-- **Compute** — Cloud Run (scales to 0; only alive while working)
-- **Async trigger** — Cloud Scheduler HTTP cron → `/cron/run`
-- **State** — Cloud Firestore: task queue, step ledger, event log, long-term memory
-- **Brain** — Google ADK `LlmAgent` + Gemini (Gemini API or Vertex AI)
-- **Tools** — ADK function tools: `web_search`, `fetch_url`, `ingest_document`,
-  `transform_data`, `write_deliverable`, `remember`/`recall`, `record_step`,
-  `complete_task`
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the diagram and
+[docs/DESIGN.md](docs/DESIGN.md) for the engineering rationale, state model,
+and failure-mode analysis.
 
-Full diagram + design notes: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+## Features
 
----
+- **Goal → plan**: a deterministic planner with optional Gemini refinement
+  produces 3–6 concrete steps (`research`, `transform`, `ingest`, `memory`,
+  `deliver`).
+- **Autonomous execution**: the ADK agent sequences tool calls toward
+  completion without supervision.
+- **Data pipelines**: `transform_data` runs head / summary / clean / filter /
+  sort / keep / count over CSV or JSON; `ingest_document` reads URLs, files,
+  or inline text.
+- **Durable memory**: `remember` / `recall` persist findings per task in
+  Firestore across sessions.
+- **Audit log**: every tool call and state transition is recorded as an event
+  on the task.
+- **Checkpoint-and-resume**: `current_step` lives in Firestore, so a worker
+  picks up exactly where the previous one stopped.
+- **Human steering**: message a running task to redirect it mid-flight.
+- **Zero-GCP demo mode**: `STORE_BACKEND=local` runs the full system on JSON
+  files, no account or API key required.
 
-## 🚀 Spin-up instructions
+## Getting started
 
-### Option A — local demo, zero Google Cloud (2 minutes)
+### Prerequisites
 
-Requires **Python 3.11+** and a free `GEMINI_API_KEY`
-([aistudio.google.com/apikey](https://aistudio.google.com/apikey)) — or no key
-at all (the planner falls back to a heuristic plan and the agent still runs its
-toolset with structured reasoning).
+- Python 3.11+ (the runtime and tests)
+- A Gemini API key ([AI Studio](https://aistudio.google.com/apikey)) for real
+  model calls — optional for the local demo, which degrades gracefully
+- Node.js (optional) — only used to serve the dashboard assets during local
+  development; the Docker image serves them directly
+
+### Local demo (no Google Cloud)
 
 ```bash
 git clone https://github.com/ro161012/agent-atlas.git
 cd agent-atlas
 
-# one-command launcher (creates .venv, installs deps)
-bash deploy/local.sh
-#   → open http://localhost:8080
+bash deploy/local.sh          # creates .venv, installs deps, starts uvicorn
+# open http://localhost:8080
+```
 
-# or manually:
-python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-export GEMINI_API_KEY=your-key          # optional but recommended
-export STORE_BACKEND=local              # JSON-file ledger, no GCP needed
+Or manually:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+export GEMINI_API_KEY=your-key        # optional
+export STORE_BACKEND=local            # JSON-file ledger, no GCP needed
 ./.venv/bin/uvicorn app.api.main:app --port 8080
 ```
 
-Then in the dashboard: paste a goal → watch Atlas plan it → hit **Run a turn**
-(or just wait for the next cron tick) → watch the event log fill with tool calls
-and progress. With `STORE_BACKEND=local`, everything also works offline:
-`export GEMINI_API_KEY=` and try "Clean this CSV … write cleaned.csv".
+Submit a goal from the dashboard, then either wait for the next cron tick or
+trigger a run immediately with `POST /api/tasks/{id}/run`.
 
-### Option B — deploy to Google Cloud (production path)
+### Deploy to Google Cloud
 
 ```bash
-# 1) prerequisites
-gcloud auth login && gcloud config set project YOUR_PROJECT_ID
-gcloud auth application-default login
-
-# 2) set secrets (Gemini API key, or Vertex AI project+location)
-gcloud secrets create atlas-gemini-key --data-file=key.txt   # optional
-
-# 3) one script does: APIs → Firestore → build → Cloud Run → Scheduler cron
-PROJECT_ID=YOUR_PROJECT_ID bash deploy/gcp.sh
+PROJECT_ID=your-project-id bash deploy/gcp.sh
 ```
 
-Under the hood `deploy/gcp.sh` runs the Cloud Build pipeline in
-[`cloudbuild.yaml`](cloudbuild.yaml), deploys the container to Cloud Run
-(unauth access for the demo), and creates a Cloud Scheduler job that POSTs
-`/cron/run` every 2 minutes. The service authenticates to Firestore via its
-default service account — no keys in the container.
+The script enables the required APIs, creates the Firestore database and
+Artifact Registry repo, builds via Cloud Build, deploys the container to Cloud
+Run (scale-to-zero, unauthenticated for the demo), and registers a Cloud
+Scheduler job that POSTs `/cron/run` every two minutes. See
+[deploy/gcp.sh](deploy/gcp.sh) and [cloudbuild.yaml](cloudbuild.yaml).
 
-> **Cost note:** Cloud Run scales to zero; the Firestore queue + 2-min cron keep
-> costs near zero between submissions. Kill the scheduler after your demo.
-
-### Verify it's running
-
-```bash
-curl http://localhost:8080/healthz
-# {"status":"ok","model":"gemini-3.5-flash","store":"firestore"}
-
-# submit a goal via the API
-curl -X POST http://localhost:8080/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"goal":"Research the top 5 open-source AI coding agents and write competitive_analysis.md"}'
-
-# force a drain (normally Cloud Scheduler does this)
-curl -X POST http://localhost:8080/cron/run
-
-# inspect the task
-curl http://localhost:8080/api/tasks/TASK_ID
-```
-
----
-
-## 🔌 API reference
+## API
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/tasks` | Submit `{"goal": "…", "title": "…"}` → plans + queues |
-| `GET` | `/api/tasks` | List tasks (newest first) |
-| `GET` | `/api/tasks/{id}` | Task + plan + event log |
+| `POST` | `/api/tasks` | Submit `{"goal": "...", "title": "..."}` |
+| `GET` | `/api/tasks` | List tasks, newest first |
+| `GET` | `/api/tasks/{id}` | Task, plan, and event log |
 | `POST` | `/api/tasks/{id}/run` | Execute one agent turn immediately |
-| `POST` | `/api/tasks/{id}/message` | Steer an existing task with `{"message": "…"}` |
-| `POST` | `/cron/run` | Cloud Scheduler hook — drain the queue |
-| `GET` | `/healthz` | Liveness + config echo |
+| `POST` | `/api/tasks/{id}/message` | Steer a task: `{"message": "..."}` |
+| `POST` | `/cron/run` | Drain the task queue (Cloud Scheduler hook) |
+| `GET` | `/healthz` | Liveness + config |
 
----
-
-## 📂 Repo layout
+## Project layout
 
 ```
 app/
-├── agent.py          # ADK LlmAgent: instruction, state seeding, run_turn()
-├── planner.py        # goal → step plan (Gemini-refined w/ heuristic fallback)
+├── agent.py          # ADK LlmAgent: instruction template, state seeding, runner
+├── planner.py        # goal → step plan (Gemini-refined, heuristic fallback)
 ├── store.py          # Firestore ledger + LocalStore (JSON) fallback
 ├── worker.py         # async drain loop: claim → run turn → persist → re-queue
-├── state_schema.py   # TaskStatus / StepStatus state machine
+├── state_schema.py   # task/step state machine
 ├── tools/
-│   ├── web.py        # web_search (SerpAPI) + fetch_url
+│   ├── web.py        # web_search, fetch_url
 │   ├── data.py       # ingest_document, transform_data, write_deliverable
-│   ├── ledger.py     # record_step, complete_task (durable progress)
-│   └── memory.py     # remember / recall (durable long-term memory)
-└── api/main.py       # FastAPI: REST + cron + dashboard
-web/                  # vanilla dashboard (index.html / app.js / style.css)
-deploy/               # local.sh + gcp.sh launchers
-cloudbuild.yaml       # CI: build → Artifact Registry → Cloud Run
-firestore.rules       # demo rules (server-authoritative writes)
-docs/ARCHITECTURE.md  # design deep-dive + Mermaid diagram
-examples/sample_goals.json
-tests/                # unit tests for planner + local store
+│   ├── ledger.py     # record_step, complete_task
+│   └── memory.py     # remember, recall
+└── api/main.py       # FastAPI app: REST + cron + static dashboard
+web/                  # dashboard (vanilla HTML/CSS/JS)
+deploy/               # local.sh, gcp.sh
+docs/                 # ARCHITECTURE.md, DESIGN.md
+tests/                # pytest suite (no network or GCP dependencies)
 ```
 
----
-
-## 🧪 Tests
+## Testing
 
 ```bash
-./.venv/bin/python -m pytest tests/ -q
+pip install -r requirements.txt pytest ruff
+ruff check app tests && ruff format --check app tests
+pytest
 ```
 
-Covers the heuristic planner and the local store backend (create/claim/plan/
-memory) without any network or GCP dependencies.
+The suite covers the planner, both storage backends, the data-transform tools,
+and a full task lifecycle (plan → execute → complete) with no network access.
+CI runs the same checks on Python 3.11 and 3.12 (see
+[.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
----
+## Configuration
 
-## ✅ Hackathon requirements checklist
+All configuration is via environment variables (see [.env.example](.env.example)):
 
-| Requirement | Where |
-|---|---|
-| Gemini 3.5 (Gemini API or Vertex AI) | `app/agent.py` — `Gemini(model=…)`, env-configurable, defaults to `gemini-3.5-flash` |
-| Google Agent Framework | Google **ADK**: `LlmAgent`, `Runner.run_async`, `ToolContext`, function tools, session state, callbacks |
-| Google Cloud infrastructure | **Cloud Run** (compute), **Firestore** (queue/state/memory), **Cloud Scheduler** (async trigger) |
-| Async, beyond chat | Firestore queue + cron worker; tasks run to completion unattended |
-| Data pipelines | `transform_data`, `ingest_document`, `write_deliverable` |
-| Durable context | Firestore-backed step ledger + `remember`/`recall` memory bank |
-| Reproducible setup | This README (spin-up) + `deploy/` scripts |
-| Architecture diagram | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) + `docs/architecture.svg` |
+| Variable | Default | Purpose |
+|---|---|---|
+| `GEMINI_API_KEY` | — | Gemini API key (or use Vertex: `GEMINI_PROJECT` / `GEMINI_LOCATION`) |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | Model identifier |
+| `STORE_BACKEND` | `firestore` | `firestore` or `local` |
+| `FIRESTORE_PROJECT` | — | GCP project for Firestore (defaults to ADC) |
+| `FIRESTORE_PREFIX` | `atlas` | Collection prefix |
+| `LOCAL_STORE_PATH` | `./atlas_data` | Local-backend data dir |
+| `SPRING_BATCH` | `5` | Tasks per cron cycle |
+| `MAX_TURNS_PER_STEP` | `8` | Turns per task per cycle |
+| `MAX_STEPS_PER_TASK` | `30` | Total turn budget before a task fails |
+| `SERPAPI_KEY` | — | Enables live web search |
 
-See [`DEVPOST_SUBMISSION.md`](DEVPOST_SUBMISSION.md) for the full write-up, and
-[`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md) for the ~4-minute demo script.
+## Security notes
 
----
+- The API has no authentication; use Cloud Run's own access controls or add
+  auth for anything beyond a demo.
+- Firestore rules allow server (service-account) writes only; see
+  [firestore.rules](firestore.rules).
+- Keys are read from the environment; use Secret Manager in production.
+- A demo install of the scheduler should be deleted after use to avoid ongoing
+  cron invocations.
 
-## 📄 License
+## License
 
-MIT © 2026 ro161012 — built for the All Things Agentic Hackathon.
+MIT. See [LICENSE](LICENSE).
+
+Submission materials: [DEVPOST_SUBMISSION.md](DEVPOST_SUBMISSION.md) and
+[VIDEO_SCRIPT.md](VIDEO_SCRIPT.md).

@@ -23,7 +23,7 @@ import itertools
 import json
 import os
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from .config import get
 from .state_schema import StepStatus, TaskStatus
@@ -31,7 +31,7 @@ from .state_schema import StepStatus, TaskStatus
 
 def _now() -> str:
     # Microsecond precision so same-instant writes still order deterministically.
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _new_id(prefix: str) -> str:
@@ -44,7 +44,7 @@ def _new_id(prefix: str) -> str:
 class FirestoreStore:
     """Production ledger backed by Cloud Firestore."""
 
-    def __init__(self, project: Optional[str] = None, prefix: str = "atlas"):
+    def __init__(self, project: str | None = None, prefix: str = "atlas"):
         from google.cloud import firestore  # lazy import so local demos work w/o dep
 
         kwargs = {"database": "(default)"}
@@ -82,33 +82,26 @@ class FirestoreStore:
         )
         return task_id
 
-    def get_task(self, task_id: str) -> Optional[dict]:
+    def get_task(self, task_id: str) -> dict | None:
         ref = self._tasks.document(task_id).get()
         return ref.to_dict() if ref.exists else None
 
     def update_task(self, task_id: str, **fields) -> None:
         fields["updated_at"] = _now()
-        self._tasks.document(task_id).set(
-            fields, merge=True
-        )
+        self._tasks.document(task_id).set(fields, merge=True)
 
     def list_tasks(self, limit: int = 50) -> list[dict]:
-        docs = (
-            self._tasks.order_by("created_at", direction="DESCENDING")
-            .limit(limit)
-            .stream()
-        )
+        docs = self._tasks.order_by("created_at", direction="DESCENDING").limit(limit).stream()
         return [d.to_dict() for d in docs]
 
-    def claim_next_task(self, batch: int = 1) -> Optional[dict]:
+    def claim_next_task(self, batch: int = 1) -> dict | None:
         """Atomically pull the oldest PENDING/planready task and mark RUNNING."""
         try:
             return self._claim_via_transaction(batch)
-        except Exception:
-            # Fall back to a best-effort single claim if the transaction hiccups.
+        except Exception:  # noqa: BLE001 - intentional: degrade to best-effort claim
             return self._claim_non_atomic()
 
-    def _claim_via_transaction(self, batch: int) -> Optional[dict]:
+    def _claim_via_transaction(self, batch: int) -> dict | None:
         from google.cloud import firestore  # deferred so local backend needs no dep
 
         transaction = self._db.transaction()
@@ -119,10 +112,7 @@ class FirestoreStore:
             # NOTE: no order_by here on purpose — equality + order_by on
             # different fields would need a composite index on a fresh project.
             # We fetch a superset and sort in Python instead.
-            query = (
-                self._tasks.where("status", "==", TaskStatus.PENDING.value)
-                .limit(batch * 8)
-            )
+            query = self._tasks.where("status", "==", TaskStatus.PENDING.value).limit(batch * 8)
             snaps = sorted(
                 tr.get(query),
                 key=lambda s: (
@@ -142,7 +132,7 @@ class FirestoreStore:
         _claim(transaction)
         return claimed[0] if claimed else None
 
-    def _claim_non_atomic(self) -> Optional[dict]:
+    def _claim_non_atomic(self) -> dict | None:
         query = self._tasks.where("status", "==", TaskStatus.PENDING.value).limit(20)
         snaps = sorted(
             query.stream(),
@@ -265,7 +255,7 @@ class LocalStore:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh)
 
-    def _read(self, path: str) -> Optional[dict]:
+    def _read(self, path: str) -> dict | None:
         try:
             with open(path, encoding="utf-8") as fh:
                 return json.load(fh)
@@ -294,7 +284,7 @@ class LocalStore:
         )
         return task_id
 
-    def get_task(self, task_id: str) -> Optional[dict]:
+    def get_task(self, task_id: str) -> dict | None:
         return self._read(self._path(self._tasks_dir, task_id))
 
     def update_task(self, task_id: str, **fields) -> None:
@@ -316,7 +306,7 @@ class LocalStore:
                 break
         return out
 
-    def claim_next_task(self, batch: int = 1) -> Optional[dict]:
+    def claim_next_task(self, batch: int = 1) -> dict | None:
         candidates = []
         for fn in os.listdir(self._tasks_dir):
             if not fn.endswith(".json"):

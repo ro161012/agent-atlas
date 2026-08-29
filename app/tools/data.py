@@ -37,7 +37,9 @@ def _parse_table(raw: str) -> list[dict]:
     return rows
 
 
-def transform_data(raw: str | list[dict], action: str, field: str = "", value: str = "", keep: str = "") -> dict:
+def transform_data(
+    raw: str | list[dict], action: str, field: str = "", value: str = "", keep: str = ""
+) -> dict:
     """Transform tabular data (a JSON array of row-objects or a CSV string).
 
     Args:
@@ -55,7 +57,12 @@ def transform_data(raw: str | list[dict], action: str, field: str = "", value: s
     try:
         rows = _parse_table(raw) if isinstance(raw, str) else list(raw)
         result = _apply_action(rows, action, field, value, keep)
-        return {"status": "success", "action": action, "rows_returned": len(result), "data": json.dumps(result, indent=2)}
+        return {
+            "status": "success",
+            "action": action,
+            "rows_returned": len(result),
+            "data": json.dumps(result, indent=2),
+        }
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "error_message": f"Transform failed: {exc}"}
 
@@ -96,7 +103,14 @@ def _summarize(rows: list[dict]) -> list[dict]:
                 pass
         entry = {"field": k, "non_empty": sum(1 for v in vals if v not in (None, ""))}
         if numeric:
-            entry.update({"min": min(numeric), "max": max(numeric), "mean": round(sum(numeric) / len(numeric), 3), "count": len(numeric)})
+            entry.update(
+                {
+                    "min": min(numeric),
+                    "max": max(numeric),
+                    "mean": round(sum(numeric) / len(numeric), 3),
+                    "count": len(numeric),
+                }
+            )
         out.append(entry)
     return out
 
@@ -150,7 +164,10 @@ def write_deliverable(filename: str, content: str) -> dict:
             fh.write(content)
         return {"status": "success", "path": path, "bytes": len(content.encode())}
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error_message": f"Could not write deliverable: {exc}"}
+        return {
+            "status": "error",
+            "error_message": f"Could not write deliverable: {exc}",
+        }
 
 
 def list_deliverables() -> dict:
@@ -177,4 +194,9 @@ def _to_text(html: str) -> str:
 
 # Re-export helper used elsewhere.
 to_text = _to_text
-__all__: list[str] = ["transform_data", "ingest_document", "write_deliverable", "list_deliverables"]
+__all__: list[str] = [
+    "ingest_document",
+    "list_deliverables",
+    "transform_data",
+    "write_deliverable",
+]

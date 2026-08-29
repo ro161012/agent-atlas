@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -42,7 +41,7 @@ WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 
 class CreateTaskBody(BaseModel):
     goal: str
-    title: Optional[str] = None
+    title: str | None = None
 
 
 class MessageBody(BaseModel):
@@ -91,13 +90,17 @@ async def run_task_now(task_id: str) -> dict:
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
     if task.get("status") in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
-        return {"task_id": task_id, "status": task.get("status"), "note": "terminal state; nothing to run"}
+        return {
+            "task_id": task_id,
+            "status": task.get("status"),
+            "note": "terminal state; nothing to run",
+        }
     store.update_task(task_id, status=TaskStatus.PENDING.value)
     from ..worker import run_one_turn  # local import to keep startup light
 
     try:
         await run_one_turn(store, build_runner_for(task_id), task)
-    except Exception as exc:  # noqa: BLE001 - same graceful path as the worker
+    except Exception as exc:
         logger.exception("Task %s failed during manual run", task_id)
         store.record_event(task_id, "error", {"message": str(exc)})
         store.update_task(
@@ -130,6 +133,7 @@ def build_runner_for(task_id: str):
 if WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 else:  # pragma: no cover - fallback when running from a different cwd
+
     @app.get("/")
     def _root() -> FileResponse:
         return FileResponse(str(WEB_DIR / "index.html"))
