@@ -109,6 +109,35 @@ Run (scale-to-zero, unauthenticated for the demo), and registers a Cloud
 Scheduler job that POSTs `/cron/run` every two minutes. See
 [deploy/gcp.sh](deploy/gcp.sh) and [cloudbuild.yaml](cloudbuild.yaml).
 
+## Hosting
+
+### Dashboard (static) — GitHub Pages
+
+The console UI is published as a static site:
+
+- Live: <https://ro161012.github.io/agent-atlas/>
+- Deploys automatically from `web/` on every push to `main` via
+  [.github/workflows/pages.yml](.github/workflows/pages.yml)
+
+The dashboard is backend-agnostic: set `window.ATLAS_CONFIG.apiBase` in
+[web/config.js](web/config.js) to point it at any deployed Agent Atlas API. The
+API enables permissive CORS for this demo, so a Pages-hosted dashboard can call
+a Cloud Run backend cross-origin. With no backend reachable, the console shows
+an explicit offline notice.
+
+### Backend (Python) — cannot be statically hosted
+
+The agent runtime is a Python/FastAPI service that talks to Gemini, Firestore,
+and Cloud Scheduler. It cannot run on static hosting (GitHub Pages) and is a
+poor fit for Vercel-style serverless functions, whose execution timeouts are
+far shorter than a multi-turn agent run. Deploy it to Cloud Run — which also
+serves the dashboard itself, giving one URL for the whole product:
+
+```bash
+PROJECT_ID=your-project-id bash deploy/gcp.sh
+# → https://atlas-<hash>-<region>.run.app  (dashboard + API together)
+```
+
 ## API
 
 | Method | Path | Description |
